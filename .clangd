@@ -1,0 +1,3 @@
+# Match the MinGW toolchain used by this Windows workspace.
+CompileFlags:
+  Add: [--target=x86_64-w64-mingw32]
