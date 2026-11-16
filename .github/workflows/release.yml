@@ -80,7 +80,6 @@ jobs:
       - name: Package the executable and Windows dependencies
         run: |
           New-Item -ItemType Directory -Path dist, package | Out-Null
-          Copy-Item -LiteralPath build/bin/w-vids.exe -Destination dist/w-vids.exe
           Copy-Item -LiteralPath build/bin/w-vids.exe -Destination package/w-vids.exe
           windeployqt --release --compiler-runtime --no-translations package/w-vids.exe
           if ($LASTEXITCODE -ne 0) { throw 'Qt deployment failed.' }
@@ -104,7 +103,6 @@ jobs:
 
           # Upload every attachment before making the release public.
           gh release create $env:RELEASE_TAG `
-            dist/w-vids.exe `
             dist/w-vids-windows-x64.zip `
             dist/w-vids-source.zip `
             --target $commit `
