@@ -1,9 +1,0 @@
-{
-  "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
-  "cmake.environment": {
-    "PATH": "C:/Qt/Tools/mingw1310_64/bin;${env:PATH}"
-  },
-  "clangd.arguments": [
-    "--compile-commands-dir=${workspaceFolder}/build"
-  ]
-}
