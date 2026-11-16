@@ -24,6 +24,8 @@ add_executable(w-vids
     src/window.cpp
     src/player.h
     src/player.cpp
+    src/clip_exporter.h
+    src/clip_exporter.cpp
     src/seek_slider.h
     src/seek_slider.cpp
 )
@@ -76,6 +78,8 @@ if(WVIDS_BUILD_TESTS)
     add_executable(player_seek_test
         tests/player_seek_test.cpp
         src/player.cpp
+        src/clip_exporter.h
+        src/clip_exporter.cpp
         src/seek_slider.cpp
     )
     target_compile_features(player_seek_test PRIVATE cxx_std_17)
@@ -84,6 +88,23 @@ if(WVIDS_BUILD_TESTS)
         Qt6::Widgets Qt6::Multimedia Qt6::MultimediaWidgets Qt6::Test
     )
     set_target_properties(player_seek_test PROPERTIES
+        AUTOMOC ON
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+    )
+    add_executable(clip_export_test
+        tests/clip_export_test.cpp
+        src/player.cpp
+        src/seek_slider.cpp
+        src/clip_exporter.h
+        src/clip_exporter.cpp
+    )
+    target_compile_features(clip_export_test PRIVATE cxx_std_17)
+    target_include_directories(clip_export_test PRIVATE src)
+    target_link_libraries(clip_export_test PRIVATE
+        Qt6::Widgets Qt6::Multimedia Qt6::MultimediaWidgets Qt6::Test
+    )
+    set_target_properties(clip_export_test PROPERTIES
+        AUTOMOC ON
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
     )
 endif()

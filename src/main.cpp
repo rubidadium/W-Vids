@@ -16,7 +16,8 @@ int main(int argc, char *argv[])
     FfmpegInstaller ffmpeg(QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("ffmpeg")));
     FfmpegSetupDialog setup(&ffmpeg, &window);
     QObject::connect(&setup, &FfmpegSetupDialog::exitRequested, &app, &QCoreApplication::quit);
-    QObject::connect(&ffmpeg, &FfmpegInstaller::ready, &window, [&window](const QString &) {
+    QObject::connect(&ffmpeg, &FfmpegInstaller::ready, &window, [&window](const QString &path) {
+        window.setFfmpegPath(path);
         window.centralWidget()->setEnabled(true);
     });
     window.show();

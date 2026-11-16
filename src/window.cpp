@@ -3,7 +3,9 @@
 #include "player.h"
 
 #include <QFileInfo>
+#include <QCoreApplication>
 #include <QFont>
+#include <QDir>
 #include <QLabel>
 #include <QMessageBox>
 #include <QPushButton>
@@ -129,8 +131,15 @@ void Window::selectVideo()
         QMessageBox::warning(this, QStringLiteral("Unable to open file dialog"), error);
     } else if (result == NFD_OKAY) {
         player_ = new Player(this);
+        player_->setExportOptions(ffmpegPath_,
+            QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("clips")));
         setCentralWidget(player_);
         setWindowTitle(QStringLiteral("Media Player - ") + QFileInfo(videoPath).fileName());
         player_->openFile(videoPath);
     }
+}
+
+void Window::setFfmpegPath(const QString &path)
+{
+    ffmpegPath_ = path;
 }

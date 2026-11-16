@@ -1,13 +1,20 @@
 #include "player.h"
 #include "seek_slider.h"
+#include "clip_exporter.h"
 
+#include <QApplication>
 #include <QAudioOutput>
 #include <QByteArray>
+#include <QClipboard>
+#include <QDir>
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMediaMetaData>
+#include <QMimeData>
+#include <QProgressBar>
+#include <QProcess>
 #include <QPushButton>
 #include <QRegularExpressionValidator>
 #include <QSignalBlocker>
@@ -49,14 +56,15 @@ Player::Player(QWidget *parent) : QWidget(parent)
         "QPushButton:focus { border: 2px solid #eeeeee; }"
         "QPushButton:disabled { background: #555555; }"));
     auto *trimStart = new QPushButton(QStringLiteral("[ Set start"), this);
+    trimStartButton_ = trimStart;
     trimStart->setObjectName(QStringLiteral("trimStart"));
     trimStart->setAccessibleName(QStringLiteral("Set trim start"));
     trimStart->setToolTip(QStringLiteral("Set trim start"));
     auto *trimEnd = new QPushButton(QStringLiteral("Set end ]"), this);
+    trimEndButton_ = trimEnd;
     trimEnd->setObjectName(QStringLiteral("trimEnd"));
     trimEnd->setAccessibleName(QStringLiteral("Set trim end"));
     trimEnd->setToolTip(QStringLiteral("Set trim end"));
-    // Trim controls are placeholders until trim selection is implemented.
     for (auto *button : {trimStart, trimEnd}) {
         button->setFixedSize(110, 32);
         button->setCursor(Qt::PointingHandCursor);
@@ -90,6 +98,23 @@ Player::Player(QWidget *parent) : QWidget(parent)
     status_ = new QLabel(this);
     status_->setWordWrap(true);
     status_->hide();
+    exporter_ = new ClipExporter(this);
+    trimRange_ = new QLabel(this);
+    trimRange_->setObjectName(QStringLiteral("trimRange"));
+    trimRange_->setWordWrap(true);
+    copyButton_ = new QPushButton(QStringLiteral("Copy"), this);
+    copyButton_->setObjectName(QStringLiteral("copyClip"));
+    copyButton_->setToolTip(QStringLiteral("Save the selected clip as MP4 and copy the file to the clipboard"));
+    cancelExportButton_ = new QPushButton(QStringLiteral("Cancel export"), this);
+    cancelExportButton_->setObjectName(QStringLiteral("cancelExport"));
+    cancelExportButton_->hide();
+    exportProgress_ = new QProgressBar(this);
+    exportProgress_->setRange(0, 100);
+    exportProgress_->hide();
+    auto *exportControls = new QHBoxLayout;
+    exportControls->addWidget(trimRange_, 1);
+    exportControls->addWidget(cancelExportButton_);
+    exportControls->addWidget(copyButton_);
 
     previewTimer_ = new QTimer(this);
     previewTimer_->setSingleShot(true);
@@ -118,9 +143,49 @@ Player::Player(QWidget *parent) : QWidget(parent)
     layout->addWidget(seek_);
     layout->addLayout(timeControls);
     layout->addLayout(controls);
+    layout->addLayout(exportControls);
+    layout->addWidget(exportProgress_);
     layout->addWidget(status_);
 
     connect(playButton_, &QPushButton::clicked, this, &Player::togglePlayback);
+    connect(trimStart, &QPushButton::clicked, this, &Player::setTrimStart);
+    connect(trimEnd, &QPushButton::clicked, this, &Player::setTrimEnd);
+    connect(copyButton_, &QPushButton::clicked, this, &Player::copyClip);
+    connect(cancelExportButton_, &QPushButton::clicked, this, [this] {
+        exporter_->cancel();
+        exportProgress_->hide();
+        cancelExportButton_->hide();
+        copyButton_->setText(QStringLiteral("Copy"));
+        status_->setText(QStringLiteral("Export canceled."));
+        status_->show();
+        updateTrimRange();
+    });
+    connect(exporter_, &ClipExporter::progressChanged, exportProgress_, &QProgressBar::setValue);
+    connect(exporter_, &ClipExporter::failed, this, [this](const QString &message) {
+        exportProgress_->hide();
+        cancelExportButton_->hide();
+        copyButton_->setText(QStringLiteral("Copy"));
+        status_->setText(message);
+        status_->show();
+        updateTrimRange();
+    });
+    connect(exporter_, &ClipExporter::completed, this, [this](const QString &path) {
+        auto *mime = new QMimeData;
+        mime->setUrls({QUrl::fromLocalFile(path)});
+        QApplication::clipboard()->setMimeData(mime);
+        exportProgress_->hide();
+        cancelExportButton_->hide();
+        copyButton_->setText(QStringLiteral("Copy"));
+        status_->setText(QStringLiteral("Copied clip to clipboard. Saved: ") + QDir::toNativeSeparators(path));
+        status_->show();
+        updateTrimRange();
+#ifdef Q_OS_WIN
+        const QString explorer = QDir(qEnvironmentVariable("SystemRoot", "C:/Windows"))
+                                     .filePath(QStringLiteral("explorer.exe"));
+        if (!QProcess::startDetached(explorer, {QStringLiteral("/select,"), QDir::toNativeSeparators(path)}))
+            status_->setText(status_->text() + QStringLiteral("\nCould not open File Explorer."));
+#endif
+    });
     connect(previousFrame_, &QPushButton::clicked, this, [this] { stepFrame(-1); });
     connect(nextFrame_, &QPushButton::clicked, this, [this] { stepFrame(1); });
     connect(positionEdit_, &QLineEdit::returnPressed, this, &Player::seekFromTime);
@@ -138,6 +203,7 @@ Player::Player(QWidget *parent) : QWidget(parent)
     connect(video->videoSink(), &QVideoSink::videoFrameChanged, this, &Player::framePresented);
     connect(media_, &QMediaPlayer::errorOccurred, this, &Player::showPlaybackError);
     updatePlaybackControls();
+    updateTrimRange();
 }
 
 QString Player::formatTime(qint64 milliseconds)
@@ -176,6 +242,9 @@ void Player::updatePlaybackControls()
     const double fps = media_->metaData().value(QMediaMetaData::VideoFrameRate).toDouble();
     previousFrame_->setEnabled(seekable && std::isfinite(fps) && fps > 0);
     nextFrame_->setEnabled(previousFrame_->isEnabled());
+    trimStartButton_->setEnabled(seekable);
+    trimEndButton_->setEnabled(seekable);
+    updateTrimRange();
     const bool playing = pendingSeek_ ? resumeAfterSeek_
                                      : media_->playbackState() == QMediaPlayer::PlayingState;
     const QString action = playing ? QStringLiteral("Pause")
@@ -196,6 +265,10 @@ void Player::updateDuration()
     const QSignalBlocker block(seek_);
     seek_->setRange(0, int(std::min<qint64>(media_->duration(), std::numeric_limits<int>::max())));
     seek_->setPageStep(std::max(1, seek_->maximum() / 100));
+    if (!trimEndSet_)
+        trimEndMs_ = media_->duration();
+    trimStartMs_ = std::min(trimStartMs_, media_->duration());
+    trimEndMs_ = std::min(trimEndMs_, media_->duration());
     updatePlaybackControls();
     updateProgress();
 }
@@ -347,6 +420,13 @@ void Player::showPlaybackError(QMediaPlayer::Error, const QString &message)
 
 void Player::openFile(const QString &videoPath)
 {
+    exporter_->cancel();
+    exportProgress_->hide();
+    cancelExportButton_->hide();
+    copyButton_->setText(QStringLiteral("Copy"));
+    sourcePath_ = QFileInfo(videoPath).absoluteFilePath();
+    trimStartMs_ = trimEndMs_ = 0;
+    trimEndSet_ = false;
     previewTimer_->stop();
     settleTimer_->stop();
     pendingSeek_ = scrubbing_ = resumeAfterSeek_ = false;
@@ -363,5 +443,67 @@ void Player::openFile(const QString &videoPath)
     }
     media_->setSource(QUrl::fromLocalFile(videoPath));
     media_->play();
+}
+
+void Player::setExportOptions(const QString &ffmpegPath, const QString &clipsDirectory)
+{
+    ffmpegPath_ = ffmpegPath;
+    clipsDirectory_ = clipsDirectory;
+    updateTrimRange();
+}
+
+void Player::setTrimStart()
+{
+    const qint64 position = pendingSeek_ || scrubbing_ ? desiredPosition_ : media_->position();
+    if (position >= trimEndMs_) {
+        status_->setText(QStringLiteral("The start must be before the end of the clip."));
+        status_->show();
+        return;
+    }
+    trimStartMs_ = position;
+    status_->hide();
+    updateTrimRange();
+}
+
+void Player::setTrimEnd()
+{
+    const qint64 position = pendingSeek_ || scrubbing_ ? desiredPosition_ : media_->position();
+    if (position <= trimStartMs_) {
+        status_->setText(QStringLiteral("The end must be after the start of the clip."));
+        status_->show();
+        return;
+    }
+    trimEndMs_ = position;
+    trimEndSet_ = true;
+    status_->hide();
+    updateTrimRange();
+}
+
+void Player::updateTrimRange()
+{
+    const qint64 duration = media_->duration();
+    const auto sliderPosition = [&](qint64 time) {
+        return duration > 0 ? qRound(double(time) * seek_->maximum() / duration) : 0;
+    };
+    seek_->setSelection(sliderPosition(trimStartMs_), sliderPosition(trimEndMs_));
+    trimRange_->setText(QStringLiteral("Start %1   End %2   Length %3")
+        .arg(formatTime(trimStartMs_), formatTime(trimEndMs_), formatTime(trimEndMs_ - trimStartMs_)));
+    copyButton_->setEnabled(!exporter_->isBusy() && media_->isSeekable()
+        && media_->error() == QMediaPlayer::NoError && trimEndMs_ > trimStartMs_
+        && !clipsDirectory_.isEmpty() && QFileInfo(ffmpegPath_).isFile());
+}
+
+void Player::copyClip()
+{
+    if (!copyButton_->isEnabled())
+        return;
+    status_->setText(QStringLiteral("Exporting selected clip…"));
+    status_->show();
+    exportProgress_->setValue(0);
+    exportProgress_->show();
+    cancelExportButton_->show();
+    copyButton_->setText(QStringLiteral("Exporting…"));
+    exporter_->start(ffmpegPath_, sourcePath_, clipsDirectory_, trimStartMs_, trimEndMs_);
+    updateTrimRange();
 }
 
