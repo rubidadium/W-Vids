@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(BlackQtWindow LANGUAGES C CXX)
+project(w-vids LANGUAGES C CXX)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -14,7 +14,7 @@ FetchContent_Declare(nativefiledialog
 )
 FetchContent_MakeAvailable(nativefiledialog)
 
-add_executable(black_qt_window
+add_executable(w-vids
     src/main.cpp
     src/ffmpeg_installer.h
     src/ffmpeg_installer.cpp
@@ -27,12 +27,12 @@ add_executable(black_qt_window
     src/seek_slider.h
     src/seek_slider.cpp
 )
-target_compile_features(black_qt_window PRIVATE cxx_std_17)
-target_link_libraries(black_qt_window PRIVATE
+target_compile_features(w-vids PRIVATE cxx_std_17)
+target_link_libraries(w-vids PRIVATE
     Qt6::Widgets Qt6::Multimedia Qt6::MultimediaWidgets Qt6::Network
     nfd::nfd
 )
-set_target_properties(black_qt_window PROPERTIES
+set_target_properties(w-vids PROPERTIES
     AUTOMOC ON
     CXX_STANDARD 17
     CXX_STANDARD_REQUIRED ON

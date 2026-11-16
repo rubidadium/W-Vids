@@ -1,0 +1,117 @@
+name: Build Windows release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'New release tag (for example, v1.0.0)'
+        required: true
+        type: string
+      changelog:
+        description: 'Release changelog (optional; Markdown supported)'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: write
+
+# Serialize releases so two manual runs cannot create the same tag at once.
+concurrency:
+  group: windows-releases
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+
+    steps:
+      - name: Check out the selected revision
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate the new tag
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:RELEASE_TAG) -or $env:RELEASE_TAG.StartsWith('-')) {
+            throw 'Enter a nonempty release tag that does not start with a dash.'
+          }
+          git check-ref-format "refs/tags/$env:RELEASE_TAG"
+          if ($LASTEXITCODE -ne 0) { throw 'The release tag is not a valid Git tag.' }
+
+          git show-ref --verify --quiet "refs/tags/$env:RELEASE_TAG"
+          if ($LASTEXITCODE -eq 0) { throw 'This tag already exists. Enter a new release tag.' }
+          if ($LASTEXITCODE -ne 1) { throw 'Could not check existing tags.' }
+          # A missing tag is expected, rather than a failed workflow step.
+          $global:LASTEXITCODE = 0
+
+      - name: Set up the Visual C++ compiler
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          host: windows
+          target: desktop
+          arch: win64_msvc2022_64
+          modules: qtmultimedia
+          cache: true
+
+      - name: Configure CMake
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
+          if ($LASTEXITCODE -ne 0) { throw 'CMake configuration failed.' }
+
+      - name: Build the main program
+        run: |
+          cmake --build build --target w-vids --parallel
+          if ($LASTEXITCODE -ne 0) { throw 'CMake build failed.' }
+
+      - name: Package the executable and Windows dependencies
+        run: |
+          New-Item -ItemType Directory -Path dist, package | Out-Null
+          Copy-Item -LiteralPath build/bin/w-vids.exe -Destination dist/w-vids.exe
+          Copy-Item -LiteralPath build/bin/w-vids.exe -Destination package/w-vids.exe
+          windeployqt --release --compiler-runtime --no-translations package/w-vids.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Qt deployment failed.' }
+          Compress-Archive -Path package/* -DestinationPath dist/w-vids-windows-x64.zip
+
+      - name: Archive the matching source code
+        run: |
+          git archive --format=zip --prefix=w-vids-source/ --output=dist/w-vids-source.zip HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Source archive creation failed.' }
+
+      - name: Create and publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CHANGELOG: ${{ inputs.changelog }}
+        run: |
+          $notesPath = Join-Path $env:RUNNER_TEMP 'release-notes.md'
+          [System.IO.File]::WriteAllText($notesPath, [string]$env:CHANGELOG)
+          $commit = git rev-parse HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Could not determine the built commit.' }
+
+          # Upload every attachment before making the release public.
+          gh release create $env:RELEASE_TAG `
+            dist/w-vids.exe `
+            dist/w-vids-windows-x64.zip `
+            dist/w-vids-source.zip `
+            --target $commit `
+            --title $env:RELEASE_TAG `
+            --notes-file $notesPath `
+            --draft
+          if ($LASTEXITCODE -ne 0) { throw 'Release creation or asset upload failed.' }
+
+          gh release edit $env:RELEASE_TAG --draft=false
+          if ($LASTEXITCODE -ne 0) { throw 'Publishing failed. The uploaded release remains a draft.' }
