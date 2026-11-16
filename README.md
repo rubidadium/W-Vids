@@ -4,6 +4,8 @@ W Vids is a swiss-army knife of tools intended to let you edit audio and video i
 
 The main feature currently offered is trimming videos straight to the clipboard.
 
+It's basically LosslessCut but tailored specifically for getting files into Google Vids.
+
 # FAQ
 ## What is this for?
 Google Vids
