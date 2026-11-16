@@ -5,6 +5,9 @@
 class Player;
 class QLabel;
 class QPushButton;
+class QLineEdit;
+class QProgressBar;
+class VideoDownloader;
 
 class Window : public QMainWindow
 {
@@ -17,6 +20,9 @@ protected:
 
 private:
     void selectVideo();
+    void openVideo(const QString &path);
+    void loadLink();
+    void updateDownloadControls();
     void updateWelcomeText(const QSize &size);
 
     Player *player_ = nullptr;
@@ -25,4 +31,10 @@ private:
     QLabel *welcomeFormats_ = nullptr;
     bool selectingVideo_ = false;
     QString ffmpegPath_;
+    QLineEdit *link_ = nullptr;
+    QPushButton *loadLinkButton_ = nullptr;
+    QPushButton *cancelDownloadButton_ = nullptr;
+    QLabel *downloadStatus_ = nullptr;
+    QProgressBar *downloadProgress_ = nullptr;
+    VideoDownloader *downloader_ = nullptr;
 };

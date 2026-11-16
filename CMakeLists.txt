@@ -22,6 +22,10 @@ add_executable(w-vids
     src/ffmpeg_setup_dialog.cpp
     src/window.h
     src/window.cpp
+    src/github_tool.h
+    src/github_tool.cpp
+    src/video_downloader.h
+    src/video_downloader.cpp
     src/player.h
     src/player.cpp
     src/clip_exporter.h
@@ -45,6 +49,22 @@ set_target_properties(w-vids PROPERTIES
 option(WVIDS_BUILD_TESTS "Build interactive player regression checks" OFF)
 if(WVIDS_BUILD_TESTS)
     find_package(Qt6 REQUIRED COMPONENTS Test)
+    add_executable(fake_yt_dlp tests/fake_yt_dlp.cpp)
+    target_link_libraries(fake_yt_dlp PRIVATE Qt6::Core)
+    set_target_properties(fake_yt_dlp PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/test-tools")
+    add_executable(video_downloader_test
+        tests/video_downloader_test.cpp
+        src/video_downloader.cpp src/video_downloader.h
+        src/github_tool.cpp src/github_tool.h
+        src/window.cpp src/player.cpp src/seek_slider.cpp
+        src/clip_exporter.cpp src/clip_exporter.h
+    )
+    target_compile_features(video_downloader_test PRIVATE cxx_std_17)
+    target_include_directories(video_downloader_test PRIVATE src)
+    target_link_libraries(video_downloader_test PRIVATE
+        Qt6::Widgets Qt6::Multimedia Qt6::MultimediaWidgets Qt6::Network Qt6::Test nfd::nfd)
+    set_target_properties(video_downloader_test PROPERTIES
+        AUTOMOC ON RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
     add_executable(fake_ffmpeg tests/fake_ffmpeg.cpp)
     add_executable(ffmpeg_installer_test
         tests/ffmpeg_installer_test.cpp

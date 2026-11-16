@@ -1,17 +1,23 @@
 #include "window.h"
 
 #include "player.h"
+#include "video_downloader.h"
 
 #include <QFileInfo>
 #include <QCoreApplication>
 #include <QFont>
 #include <QDir>
 #include <QLabel>
+#include <QLineEdit>
+#include <QFrame>
+#include <QHBoxLayout>
+#include <QProgressBar>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QResizeEvent>
 #include <QScopedValueRollback>
 #include <QVBoxLayout>
+#include <QUrl>
 #include <nfd.h>
 #include <algorithm>
 
@@ -34,7 +40,7 @@ Window::Window(QWidget *parent) : QMainWindow(parent)
     select->setCursor(Qt::PointingHandCursor);
     select->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     select->setStyleSheet(QStringLiteral(
-        "QPushButton#selectVideo { background: #171717; border: 2px dashed #454545;"
+        "QPushButton#selectVideo { background: #171717; border: 4px dashed #454545;"
         " border-radius: 10px; }"
         "QPushButton#selectVideo:hover { background: #1c1c1c; border-color: #777777; }"
         "QPushButton#selectVideo:focus { border-color: #aaaaaa; }"
@@ -68,6 +74,76 @@ Window::Window(QWidget *parent) : QMainWindow(parent)
     auto *layout = new QVBoxLayout(welcome);
     layout->setContentsMargins(24, 24, 24, 24);
     layout->addWidget(select, 1);
+    auto *divider = new QFrame(welcome);
+    divider->setFrameShape(QFrame::HLine);
+    divider->setStyleSheet(QStringLiteral("color: #454545;"));
+    layout->addSpacing(10);
+    layout->addWidget(divider);
+    layout->addSpacing(10);
+    link_ = new QLineEdit(welcome);
+    link_->setObjectName(QStringLiteral("videoLink"));
+    link_->setPlaceholderText(QStringLiteral("Or load from a link"));
+    link_->setAccessibleName(QStringLiteral("Or load from a link"));
+    link_->setClearButtonEnabled(true);
+    link_->setMinimumHeight(42);
+    link_->setStyleSheet(QStringLiteral(
+        "QLineEdit { color: #eeeeee; background: #1b1b1b; border: 1px solid #454545;"
+        " border-radius: 6px; padding: 0 12px; font-size: 15px; }"
+        "QLineEdit:focus { border-color: #08a4bf; }"));
+    loadLinkButton_ = new QPushButton(QStringLiteral("Download"), welcome);
+    loadLinkButton_->setObjectName(QStringLiteral("loadLink"));
+    loadLinkButton_->setMinimumHeight(42);
+    loadLinkButton_->setStyleSheet(QStringLiteral(
+        "QPushButton { color: white; background: #079bb3; border: none; border-radius: 6px; padding: 0 20px; }"
+        "QPushButton:hover { background: #0aafc8; }"
+        "QPushButton:disabled { background: #333333; color: #888888; }"));
+    cancelDownloadButton_ = new QPushButton(QStringLiteral("Cancel"), welcome);
+    cancelDownloadButton_->setObjectName(QStringLiteral("cancelDownload"));
+    cancelDownloadButton_->setMinimumHeight(42);
+    cancelDownloadButton_->hide();
+    auto *linkRow = new QHBoxLayout;
+    linkRow->addWidget(link_, 1);
+    linkRow->addWidget(loadLinkButton_);
+    linkRow->addWidget(cancelDownloadButton_);
+    layout->addLayout(linkRow);
+    downloadStatus_ = new QLabel(welcome);
+    downloadStatus_->setObjectName(QStringLiteral("downloadStatus"));
+    downloadStatus_->setWordWrap(true);
+    downloadStatus_->setTextFormat(Qt::PlainText);
+    downloadStatus_->setStyleSheet(QStringLiteral("color: #b8b8b8;"));
+    downloadStatus_->hide();
+    downloadProgress_ = new QProgressBar(welcome);
+    downloadProgress_->setObjectName(QStringLiteral("downloadProgress"));
+    downloadProgress_->hide();
+    layout->addWidget(downloadStatus_);
+    layout->addWidget(downloadProgress_);
+    const QDir application(QCoreApplication::applicationDirPath());
+    downloader_ = new VideoDownloader(application.filePath("download"), application.filePath("tools"), this);
+    connect(link_, &QLineEdit::returnPressed, this, &Window::loadLink);
+    connect(loadLinkButton_, &QPushButton::clicked, this, &Window::loadLink);
+    connect(cancelDownloadButton_, &QPushButton::clicked, this, [this] {
+        downloader_->cancel();
+        downloadStatus_->setText(QStringLiteral("Download canceled."));
+        downloadProgress_->hide();
+        updateDownloadControls();
+    });
+    connect(downloader_, &VideoDownloader::statusChanged, this, [this](const QString &text) {
+        if (player_) return;
+        downloadStatus_->setText(text);
+        downloadStatus_->show();
+    });
+    connect(downloader_, &VideoDownloader::progressChanged, this, [this](int percent) {
+        if (player_) return;
+        downloadProgress_->setRange(0, percent < 0 ? 0 : 100);
+        if (percent >= 0) downloadProgress_->setValue(percent);
+    });
+    connect(downloader_, &VideoDownloader::failed, this, [this](const QString &message) {
+        downloadStatus_->setText(message);
+        downloadStatus_->show();
+        downloadProgress_->hide();
+        updateDownloadControls();
+    });
+    connect(downloader_, &VideoDownloader::completed, this, &Window::openVideo);
     updateWelcomeText(size());
     select->installEventFilter(this);
     setCentralWidget(welcome);
@@ -98,7 +174,7 @@ void Window::updateWelcomeText(const QSize &size)
 
 void Window::selectVideo()
 {
-    if (selectingVideo_)
+    if (selectingVideo_ || downloader_->isBusy())
         return;
     QScopedValueRollback<bool> selecting(selectingVideo_, true);
 
@@ -130,13 +206,36 @@ void Window::selectVideo()
     if (result == NFD_ERROR) {
         QMessageBox::warning(this, QStringLiteral("Unable to open file dialog"), error);
     } else if (result == NFD_OKAY) {
-        player_ = new Player(this);
-        player_->setExportOptions(ffmpegPath_,
-            QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("clips")));
-        setCentralWidget(player_);
-        setWindowTitle(QStringLiteral("Media Player - ") + QFileInfo(videoPath).fileName());
-        player_->openFile(videoPath);
+        openVideo(videoPath);
     }
+}
+
+void Window::openVideo(const QString &path)
+{
+    player_ = new Player(this);
+    player_->setExportOptions(ffmpegPath_,
+        QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("clips")));
+    setCentralWidget(player_);
+    setWindowTitle(QStringLiteral("Media Player - ") + QFileInfo(path).fileName());
+    player_->openFile(path);
+}
+
+void Window::loadLink()
+{
+    if (player_ || downloader_->isBusy() || !centralWidget()->isEnabled()) return;
+    downloadStatus_->show();
+    downloadProgress_->show();
+    downloader_->start(QUrl(link_->text().trimmed()), ffmpegPath_);
+    updateDownloadControls();
+}
+
+void Window::updateDownloadControls()
+{
+    const bool busy = downloader_->isBusy();
+    selectButton_->setEnabled(!busy);
+    link_->setEnabled(!busy);
+    loadLinkButton_->setEnabled(!busy);
+    cancelDownloadButton_->setVisible(busy);
 }
 
 void Window::setFfmpegPath(const QString &path)
