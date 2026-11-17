@@ -1,6 +1,7 @@
 #include <QApplication>
 #include <QDir>
 #include <QTimer>
+#include <QIcon>
 
 #include "ffmpeg_installer.h"
 #include "ffmpeg_setup_dialog.h"
@@ -11,6 +12,7 @@ int main(int argc, char *argv[])
 {
     Player::configureBackend();
     QApplication app(argc, argv);
+    app.setWindowIcon(QIcon(":/asset/icon.ico"));
     Window window;
     window.centralWidget()->setEnabled(false);
     FfmpegInstaller ffmpeg(QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("ffmpeg")));

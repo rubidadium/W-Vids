@@ -11,6 +11,7 @@
 #include <QTest>
 #include <QVideoFrame>
 #include <QVideoSink>
+#include <QVideoWidget>
 #include <QWheelEvent>
 #include <cstdio>
 #include <cstdlib>
@@ -32,6 +33,8 @@ int main(int argc, char **argv)
     Player widget;
     widget.resize(960, 600);
     widget.show();
+    widget.activateWindow();
+    require(QTest::qWaitForWindowActive(&widget), "Player window is active for keyboard shortcut tests");
     widget.openFile(QString::fromLocal8Bit(argv[1]));
     auto *media = widget.findChild<QMediaPlayer *>();
     auto *slider = widget.findChild<QSlider *>(QStringLiteral("timeline"));
@@ -69,6 +72,43 @@ int main(int argc, char **argv)
     QTest::keyClick(slider, Qt::Key_Left);
     require(QTest::qWaitFor([&] { return media->position() == 3217; }),
             "Left arrow seeks backward one millisecond");
+
+    play->setFocus();
+    QTest::keyClick(play, Qt::Key_Right);
+    require(QTest::qWaitFor([&] { return media->position() == 3218; }),
+            "Right arrow scrubs while play button has focus");
+    auto *trimStart = widget.findChild<QPushButton *>("trimStart");
+    trimStart->setFocus();
+    QTest::keyClick(trimStart, Qt::Key_Left);
+    require(QTest::qWaitFor([&] { return media->position() == 3217; }),
+            "Left arrow scrubs while trim button has focus");
+    auto *video = widget.findChild<QVideoWidget *>();
+    video->setFocus();
+    QTest::keyClick(video, Qt::Key_Right);
+    require(QTest::qWaitFor([&] { return media->position() == 3218; }),
+            "Right arrow scrubs while video has focus");
+    editor->setFocus();
+    editor->setCursorPosition(8);
+    const qint64 beforeTextEdit = media->position();
+    QTest::keyClick(editor, Qt::Key_Left);
+    require(editor->cursorPosition() == 7 && media->position() == beforeTextEdit,
+            "Arrow keys still move the cursor in the time editor");
+    QTest::keyClick(editor, Qt::Key_Right);
+    require(editor->cursorPosition() == 8 && media->position() == beforeTextEdit,
+            "Time editor does not trigger a seek");
+    slider->setFocus();
+    QTest::keyClick(slider, Qt::Key_Space);
+    require(QTest::qWaitFor([&] { return media->playbackState() == QMediaPlayer::PlayingState; }, 3000),
+            "Space starts playback from the timeline");
+    trimStart->setFocus();
+    QTest::keyClick(trimStart, Qt::Key_Space);
+    require(QTest::qWaitFor([&] { return media->playbackState() == QMediaPlayer::PausedState; }),
+            "Space pauses playback while a trim button has focus");
+    editor->setFocus();
+    QTest::keyClick(editor, Qt::Key_Space);
+    require(media->playbackState() == QMediaPlayer::PausedState,
+            "Typing in the time field does not toggle playback");
+    slider->setFocus();
 
     QTest::mouseClick(slider, Qt::LeftButton, Qt::NoModifier,
                       QPoint(slider->width() * 3 / 4, slider->height() / 2));

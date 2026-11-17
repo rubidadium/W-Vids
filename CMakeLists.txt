@@ -33,6 +33,20 @@ add_executable(w-vids
     src/seek_slider.h
     src/seek_slider.cpp
 )
+qt_add_resources(w-vids app_icons
+    PREFIX "/"
+    FILES asset/icon.ico
+)
+
+if(WIN32)
+    set_target_properties(w-vids PROPERTIES WIN32_EXECUTABLE TRUE)
+    enable_language(RC)
+    target_sources(w-vids PRIVATE asset/app.rc)
+    set_source_files_properties(asset/app.rc PROPERTIES
+        OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/asset/icon.ico"
+    )
+    target_include_directories(w-vids PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/asset")
+endif()
 target_compile_features(w-vids PRIVATE cxx_std_17)
 target_link_libraries(w-vids PRIVATE
     Qt6::Widgets Qt6::Multimedia Qt6::MultimediaWidgets Qt6::Network

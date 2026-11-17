@@ -18,6 +18,7 @@ protected:
     void mouseReleaseEvent(QMouseEvent *event) override;
 
 private:
+    QRect timelineRect() const;
     int positionAt(qreal x) const;
     QPointF previousMouse_;
     double dragPosition_ = 0;

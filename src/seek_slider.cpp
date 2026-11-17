@@ -22,45 +22,43 @@ void SeekSlider::setSelection(int start, int end)
     update();
 }
 
+QRect SeekSlider::timelineRect() const
+{
+    return QRect(2, (height() - 16) / 2, std::max(1, width() - 4), 16);
+}
+
 void SeekSlider::paintEvent(QPaintEvent *)
 {
     QStyleOptionSlider option;
     initStyleOption(&option);
     QPainter painter(this);
-    const QRect groove = style()->subControlRect(QStyle::CC_Slider, &option,
-                                                  QStyle::SC_SliderGroove, this);
-    const QRect handle = style()->subControlRect(QStyle::CC_Slider, &option,
-                                                  QStyle::SC_SliderHandle, this);
+    const QRect bar = timelineRect();
+    painter.setOpacity(isEnabled() ? 1.0 : 0.45);
     const auto xAt = [&](int position) {
-        return groove.left() + handle.width() / 2 + QStyle::sliderPositionFromValue(
-            minimum(), maximum(), position, std::max(1, groove.width() - handle.width()), option.upsideDown);
+        return bar.left() + QStyle::sliderPositionFromValue(
+            minimum(), maximum(), position, std::max(1, bar.width() - 1), option.upsideDown);
     };
     const int start = xAt(selectionStart_);
     const int end = xAt(selectionEnd_);
-    painter.setPen(Qt::NoPen);
-    painter.setBrush(QColor("#45494c"));
-    painter.drawRoundedRect(QRect(groove.left(), groove.center().y() - 5, groove.width(), 10), 3, 3);
-    painter.setBrush(QColor("#9b7059"));
-    painter.drawRect(QRect(QPoint(std::min(start, end), groove.center().y() - 5),
-                           QPoint(std::max(start, end), groove.center().y() + 5)));
+    painter.fillRect(bar, QColor("#45494c"));
+    painter.fillRect(QRect(QPoint(std::min(start, end), bar.top()),
+                           QPoint(std::max(start, end), bar.bottom())), QColor("#9b7059"));
     painter.setPen(QPen(QColor("#e1b598"), 2));
     for (const int x : {start, end})
-        painter.drawLine(x, groove.center().y() - 11, x, groove.center().y() + 11);
-    option.subControls = QStyle::SC_SliderHandle;
-    style()->drawComplexControl(QStyle::CC_Slider, &option, &painter, this);
+        painter.drawLine(x, bar.top() - 3, x, bar.bottom() + 3);
+    // Draw the playhead last so it remains visible over the selection and trim markers.
+    painter.setPen(QPen(QColor("#f5f5f5"), 2, Qt::SolidLine, Qt::FlatCap));
+    const int playhead = xAt(value());
+    painter.drawLine(playhead, bar.top() - 6, playhead, bar.bottom() + 7);
 }
 
 int SeekSlider::positionAt(qreal x) const
 {
     QStyleOptionSlider option;
     initStyleOption(&option);
-    const QRect groove = style()->subControlRect(QStyle::CC_Slider, &option,
-                                                  QStyle::SC_SliderGroove, this);
-    const QRect handle = style()->subControlRect(QStyle::CC_Slider, &option,
-                                                  QStyle::SC_SliderHandle, this);
+    const QRect bar = timelineRect();
     return QStyle::sliderValueFromPosition(minimum(), maximum(),
-        qRound(x - groove.left() - handle.width() / 2.0),
-        std::max(1, groove.width() - handle.width()), option.upsideDown);
+        qRound(x - bar.left()), std::max(1, bar.width() - 1), option.upsideDown);
 }
 
 void SeekSlider::mousePressEvent(QMouseEvent *event)

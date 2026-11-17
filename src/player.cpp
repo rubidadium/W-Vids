@@ -18,6 +18,8 @@
 #include <QPushButton>
 #include <QRegularExpressionValidator>
 #include <QSignalBlocker>
+#include <QShortcut>
+#include <QSlider>
 #include <QStyle>
 #include <QTimer>
 #include <QUrl>
@@ -128,6 +130,27 @@ Player::Player(QWidget *parent) : QWidget(parent)
     timeControls->addWidget(positionEdit_);
     timeControls->addWidget(time_);
     timeControls->addStretch();
+    auto *volumeLabel = new QLabel(QStringLiteral("Volume"), this);
+    auto *volume = new QSlider(Qt::Horizontal, this);
+    volume->setObjectName(QStringLiteral("previewVolume"));
+    volume->setAccessibleName(QStringLiteral("Preview volume"));
+    volume->setToolTip(QStringLiteral("Preview volume only. Exported audio is unchanged."));
+    volume->setRange(0, 100);
+    volume->setValue(100);
+    volume->setFixedWidth(120);
+    volume->setPageStep(10);
+    volumeLabel->setBuddy(volume);
+    auto *volumeValue = new QLabel(QStringLiteral("100%"), this);
+    volumeValue->setMinimumWidth(volumeValue->fontMetrics().horizontalAdvance(QStringLiteral("100%")));
+    volumeValue->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    timeControls->addWidget(volumeLabel);
+    timeControls->addWidget(volume);
+    timeControls->addWidget(volumeValue);
+    // Adjust only the playback output; exports read audio from the source file.
+    connect(volume, &QSlider::valueChanged, audio, [audio, volumeValue](int value) {
+        audio->setVolume(value / 100.0f);
+        volumeValue->setText(QStringLiteral("%1%").arg(value));
+    });
     auto *controls = new QHBoxLayout;
     controls->setSpacing(10);
     controls->addStretch();
@@ -198,6 +221,21 @@ Player::Player(QWidget *parent) : QWidget(parent)
     connect(seek_, &QSlider::sliderPressed, this, &Player::beginScrub);
     connect(seek_, &QSlider::sliderReleased, this, &Player::endScrub);
     connect(seek_, &QSlider::valueChanged, this, &Player::seekToPosition);
+    // Window shortcuts remain available when a button or the video has focus.
+    // Editable text controls handle ShortcutOverride to keep their cursor keys.
+    const auto scrub = [this](QAbstractSlider::SliderAction action) {
+        if (seek_->isEnabled())
+            seek_->triggerAction(action);
+    };
+    new QShortcut(QKeySequence(Qt::Key_Left), this,
+        [scrub] { scrub(QAbstractSlider::SliderSingleStepSub); }, Qt::WindowShortcut);
+    new QShortcut(QKeySequence(Qt::Key_Right), this,
+        [scrub] { scrub(QAbstractSlider::SliderSingleStepAdd); }, Qt::WindowShortcut);
+    auto *togglePlaybackShortcut = new QShortcut(QKeySequence(Qt::Key_Space), this, [this] {
+        if (playButton_->isEnabled())
+            togglePlayback();
+    }, Qt::WindowShortcut);
+    togglePlaybackShortcut->setAutoRepeat(false);
     connect(previewTimer_, &QTimer::timeout, this, &Player::commitSeek);
     connect(settleTimer_, &QTimer::timeout, this, &Player::finishSeek);
     connect(video->videoSink(), &QVideoSink::videoFrameChanged, this, &Player::framePresented);
