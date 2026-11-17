@@ -4,9 +4,7 @@
 #include "video_downloader.h"
 
 #include <QFileInfo>
-#include <QCoreApplication>
 #include <QFont>
-#include <QDir>
 #include <QLabel>
 #include <QLineEdit>
 #include <QFrame>
@@ -25,7 +23,7 @@ namespace {
 constexpr char videoExtensions[] = "mp4,mkv,mov,avi,webm,m4v,mpg,mpeg,wmv,flv,ts,mts,m2ts,ogv";
 }
 
-Window::Window(QWidget *parent) : QMainWindow(parent)
+Window::Window(QWidget *parent, const AppPaths &paths) : QMainWindow(parent), clipsDirectory_(paths.clip)
 {
     setWindowTitle(QStringLiteral("Media Player"));
     resize(960, 600);
@@ -117,8 +115,7 @@ Window::Window(QWidget *parent) : QMainWindow(parent)
     downloadProgress_->hide();
     layout->addWidget(downloadStatus_);
     layout->addWidget(downloadProgress_);
-    const QDir application(QCoreApplication::applicationDirPath());
-    downloader_ = new VideoDownloader(application.filePath("download"), application.filePath("tools"), this);
+    downloader_ = new VideoDownloader(paths.download, paths.tools, this);
     connect(link_, &QLineEdit::returnPressed, this, &Window::loadLink);
     connect(loadLinkButton_, &QPushButton::clicked, this, &Window::loadLink);
     connect(cancelDownloadButton_, &QPushButton::clicked, this, [this] {
@@ -213,8 +210,7 @@ void Window::selectVideo()
 void Window::openVideo(const QString &path)
 {
     player_ = new Player(this);
-    player_->setExportOptions(ffmpegPath_,
-        QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("clips")));
+    player_->setExportOptions(ffmpegPath_, clipsDirectory_);
     setCentralWidget(player_);
     setWindowTitle(QStringLiteral("Media Player - ") + QFileInfo(path).fileName());
     player_->openFile(path);

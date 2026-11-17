@@ -16,6 +16,7 @@ FetchContent_MakeAvailable(nativefiledialog)
 
 add_executable(w-vids
     src/main.cpp
+    src/app_paths.h
     src/ffmpeg_installer.h
     src/ffmpeg_installer.cpp
     src/ffmpeg_setup_dialog.h
@@ -63,6 +64,14 @@ set_target_properties(w-vids PROPERTIES
 option(WVIDS_BUILD_TESTS "Build interactive player regression checks" OFF)
 if(WVIDS_BUILD_TESTS)
     find_package(Qt6 REQUIRED COMPONENTS Test)
+    add_executable(app_paths_test tests/app_paths_test.cpp)
+    target_include_directories(app_paths_test PRIVATE src)
+    target_link_libraries(app_paths_test PRIVATE Qt6::Core)
+    set_target_properties(app_paths_test PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+    if(WIN32)
+        add_executable(wrapper_probe WIN32 tests/wrapper_probe.cpp)
+        set_target_properties(wrapper_probe PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/test-tools")
+    endif()
     add_executable(fake_yt_dlp tests/fake_yt_dlp.cpp)
     target_link_libraries(fake_yt_dlp PRIVATE Qt6::Core)
     set_target_properties(fake_yt_dlp PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/test-tools")

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QMainWindow>
+#include "app_paths.h"
 
 class Player;
 class QLabel;
@@ -12,7 +13,7 @@ class VideoDownloader;
 class Window : public QMainWindow
 {
 public:
-    explicit Window(QWidget *parent = nullptr);
+    explicit Window(QWidget *parent = nullptr, const AppPaths &paths = AppPaths::forCurrentUser());
     void setFfmpegPath(const QString &path);
 
 protected:
@@ -31,6 +32,7 @@ private:
     QLabel *welcomeFormats_ = nullptr;
     bool selectingVideo_ = false;
     QString ffmpegPath_;
+    QString clipsDirectory_;
     QLineEdit *link_ = nullptr;
     QPushButton *loadLinkButton_ = nullptr;
     QPushButton *cancelDownloadButton_ = nullptr;

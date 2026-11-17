@@ -1,4 +1,4 @@
-name: Build Windows release
+name: Build Windows
 
 on:
   workflow_dispatch:
@@ -69,13 +69,15 @@ jobs:
 
       - name: Configure CMake
         run: |
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DWVIDS_BUILD_TESTS=ON
           if ($LASTEXITCODE -ne 0) { throw 'CMake configuration failed.' }
 
-      - name: Build the main program
+      - name: Build the main program and packaging checks
         run: |
-          cmake --build build --target w-vids --parallel
+          cmake --build build --target w-vids app_paths_test wrapper_probe --parallel
           if ($LASTEXITCODE -ne 0) { throw 'CMake build failed.' }
+          ./build/bin/app_paths_test.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Storage path checks failed.' }
 
       - name: Package the executable and Windows dependencies
         run: |
@@ -83,7 +85,21 @@ jobs:
           Copy-Item -LiteralPath build/bin/w-vids.exe -Destination package/w-vids.exe
           windeployqt --release --compiler-runtime --no-translations package/w-vids.exe
           if ($LASTEXITCODE -ne 0) { throw 'Qt deployment failed.' }
-          Compress-Archive -Path package/* -DestinationPath dist/w-vids-windows-x64.zip
+
+      - name: Build the single-file launcher
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP 'nsis.zip'
+          Invoke-WebRequest -Uri 'https://downloads.sourceforge.net/project/nsis/NSIS%203/3.12/nsis-3.12.zip' -OutFile $archive
+          if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne '56581F90DB321581C5381193D796FFFCF2D24B2F8FED2160A6C6A3BAA67F2C4F') {
+            throw 'NSIS archive checksum mismatch.'
+          }
+          Expand-Archive -LiteralPath $archive -DestinationPath $env:RUNNER_TEMP
+          $makensis = Join-Path $env:RUNNER_TEMP 'nsis-3.12/makensis.exe'
+          ./tests/wrapper_test.ps1 -Makensis $makensis `
+            -ProbeExecutable build/test-tools/wrapper_probe.exe -WorkDirectory build/wrapper-check
+          ./packaging/build-wrapper.ps1 -PackageDirectory package `
+            -OutputFile dist/w-vids-windows-x64.exe `
+            -Makensis $makensis
 
       - name: Archive the matching source code
         run: |
@@ -103,7 +119,7 @@ jobs:
 
           # Upload every attachment before making the release public.
           gh release create $env:RELEASE_TAG `
-            dist/w-vids-windows-x64.zip `
+            dist/w-vids-windows-x64.exe `
             dist/w-vids-source.zip `
             --target $commit `
             --title $env:RELEASE_TAG `

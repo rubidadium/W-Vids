@@ -144,7 +144,8 @@ int main(int argc, char **argv)
         holdVideo = false;
     }
 
-    Window window;
+    Window window(nullptr, {root.filePath("window-download"), root.filePath("window-clip"),
+                            toolsPath, QFileInfo(ffmpeg).absolutePath()});
     window.setFfmpegPath(ffmpeg);
     window.show();
     auto *field = window.findChild<QLineEdit *>("videoLink");
@@ -155,6 +156,9 @@ int main(int argc, char **argv)
     QTest::keyClick(field, Qt::Key_Return);
     require(QTest::qWaitFor([&] { return window.findChild<QMediaPlayer *>() != nullptr; }, 15000),
             "Submitting a link opens downloaded video in the player");
+    require(QFileInfo(window.findChild<QMediaPlayer *>()->source().toLocalFile()).absolutePath()
+                == root.filePath("window-download"),
+            "Window downloads use the configured media directory");
     std::puts("PASS: URL validation, direct curl, yt-dlp page, unique saves, media validation, cancellation, retry, welcome field, player opening");
     return 0;
 }

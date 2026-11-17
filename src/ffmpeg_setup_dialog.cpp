@@ -126,7 +126,7 @@ void FfmpegSetupDialog::showPrompt()
     mode_ = Mode::Prompt;
     title_->setText(QStringLiteral("FFmpeg is required"));
     message_->setText(QStringLiteral("FFmpeg was not detected. Download it to enable video trimming.\n"
-                                    "It will be saved in the ffmpeg folder beside this application."));
+                                    "It will be saved for your Windows account and reused next time."));
     primary_->setText(QStringLiteral("Download"));
     primary_->setEnabled(true);
     show();
