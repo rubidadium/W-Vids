@@ -88,13 +88,7 @@ jobs:
 
       - name: Build the single-file launcher
         run: |
-          $archive = Join-Path $env:RUNNER_TEMP 'nsis.zip'
-          Invoke-WebRequest -Uri 'https://downloads.sourceforge.net/project/nsis/NSIS%203/3.12/nsis-3.12.zip' -OutFile $archive
-          if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne '56581F90DB321581C5381193D796FFFCF2D24B2F8FED2160A6C6A3BAA67F2C4F') {
-            throw 'NSIS archive checksum mismatch.'
-          }
-          Expand-Archive -LiteralPath $archive -DestinationPath $env:RUNNER_TEMP
-          $makensis = Join-Path $env:RUNNER_TEMP 'nsis-3.12/makensis.exe'
+          $makensis = ./packaging/get-nsis.ps1 -DestinationDirectory (Join-Path $env:RUNNER_TEMP 'nsis-toolchain')
           ./tests/wrapper_test.ps1 -Makensis $makensis `
             -ProbeExecutable build/test-tools/wrapper_probe.exe -WorkDirectory build/wrapper-check
           ./packaging/build-wrapper.ps1 -PackageDirectory package `
